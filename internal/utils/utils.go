@@ -19,15 +19,15 @@ import (
 
 // ANSI colors.
 const (
-	Reset  = "\033[0m"
-	Bold   = "\033[1m"
-	Red    = "\033[31m"
-	Green  = "\033[32m"
-	Yellow = "\033[33m"
-	Blue   = "\033[34m"
-	Cyan   = "\033[36m"
-	Magenta= "\033[35m"
-	Gray   = "\033[90m"
+	Reset   = "\033[0m"
+	Bold    = "\033[1m"
+	Red     = "\033[31m"
+	Green   = "\033[32m"
+	Yellow  = "\033[33m"
+	Blue    = "\033[34m"
+	Cyan    = "\033[36m"
+	Magenta = "\033[35m"
+	Gray    = "\033[90m"
 )
 
 // C wraps s in the given color.
@@ -104,7 +104,7 @@ func NewHTTP(timeout time.Duration, cookies, headers map[string]string, verbose 
 		timeout = 30 * time.Second
 	}
 	h := &HTTP{
-		Client: &http.Client{Timeout: timeout},
+		Client:  &http.Client{Timeout: timeout},
 		Cookies: map[string]string{},
 		Headers: map[string]string{},
 		Verbose: verbose,
@@ -159,9 +159,9 @@ func (h *HTTP) Do(method, rawurl, body string, extra map[string]string) (*Respon
 		raw, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		out := &Response{
-			Status: resp.StatusCode,
-			Header: resp.Header,
-			Body:   string(raw),
+			Status:   resp.StatusCode,
+			Header:   resp.Header,
+			Body:     string(raw),
 			Duration: time.Since(start),
 		}
 		out.WAF = detection.Detect(resp.Header, out.Body)

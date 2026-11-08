@@ -7,8 +7,8 @@ import (
 )
 
 type signature struct {
-	Name    string
-	Hints   []string // matched against "header: value" pairs and the lowercased body
+	Name  string
+	Hints []string // matched against "header: value" pairs and the lowercased body
 }
 
 var signatures = []signature{

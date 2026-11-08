@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chromedp/chromedp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/chromedp"
 )
 
 // DialogHit describes an intercepted JavaScript dialog.

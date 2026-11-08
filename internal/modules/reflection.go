@@ -183,7 +183,11 @@ func charMatrix(respBody string, canary string) (allowed, escaped, filtered []st
 	if idx < 0 {
 		return nil, nil, specialCharList()
 	}
-	window := respBody[idx : idx+len(canary)+len(specialChars)+24]
+	end := idx + len(canary) + len(specialChars) + 24
+	if end > len(respBody) {
+		end = len(respBody)
+	}
+	window := respBody[idx:end]
 	joined := strings.ToLower(window)
 	for _, ch := range specialCharList() {
 		switch {

@@ -1,6 +1,18 @@
+# xsshunts / xsshunts-chromedp binaries
 xsshunts
 xsshunts-*
+!xsshunts_*.go
+
+# build & test artifacts
 output/
-*.test
 dist/
+*.test
+coverage.out
+
+# playwright
 .playwright/
+
+# editor / OS noise
+.DS_Store
+.idea/
+.vscode/

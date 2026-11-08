@@ -5,11 +5,11 @@ package reporter
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"html/template"
 	"time"
 
 	"github.com/zapstiko/xsshunts/internal/config"
@@ -19,15 +19,15 @@ import (
 
 // Report aggregates every outcome of a scan.
 type Report struct {
-	Tool         string             `json:"tool"`
-	Version      string             `json:"version"`
-	GeneratedAt  time.Time          `json:"generated_at"`
-	Targets      []string           `json:"targets"`
-	Parameters   int                `json:"parameters_tested"`
-	Reflections  int                `json:"reflections_observed"`
-	WAF          []string           `json:"waf_detected,omitempty"`
-	Confirmed    []*models.Finding  `json:"confirmed"`  // browser dialog verified
-	Candidates   []*models.Finding  `json:"candidates"` // reflection only
+	Tool        string            `json:"tool"`
+	Version     string            `json:"version"`
+	GeneratedAt time.Time         `json:"generated_at"`
+	Targets     []string          `json:"targets"`
+	Parameters  int               `json:"parameters_tested"`
+	Reflections int               `json:"reflections_observed"`
+	WAF         []string          `json:"waf_detected,omitempty"`
+	Confirmed   []*models.Finding `json:"confirmed"`  // browser dialog verified
+	Candidates  []*models.Finding `json:"candidates"` // reflection only
 }
 
 // New creates an empty report.
@@ -163,7 +163,7 @@ func (r *Report) WriteHTML(path string) (string, error) {
 	}
 	data := struct {
 		Version, GeneratedAt, Targets, Params, Reflections, Confirmed, Candidates, WAF string
-		Rows                                                                          []htmlRow
+		Rows                                                                           []htmlRow
 	}{
 		Version:     config.Version,
 		GeneratedAt: time.Now().Format(time.RFC1123),

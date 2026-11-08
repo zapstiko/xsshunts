@@ -1,0 +1,24 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+      - name: Build (Playwright engine)
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Build binaries
+        run: |
+          go build -o /tmp/xsshunts .
+          go build -o /tmp/xsshunts-chromedp ./cmd/xsshunts-chromedp

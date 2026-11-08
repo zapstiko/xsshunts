@@ -17,40 +17,40 @@ const Version = "1.0.0"
 
 // Options holds every CLI option.
 type Options struct {
-	URL             string
-	File            string
-	Stdin           bool
-	BrowserKind     string
-	BrowserPath     string
-	NoBrowser       bool
-	Headless        bool
-	TimeoutMS       int
-	DelayMinMS      int
-	DelayMaxMS      int
-	Threads         int
-	Scan            string
-	WordlistFile    string
-	MiningOnly      bool
-	ParamsSpec      string
-	Exclude         string
-	Data            string
-	Cookie          string
-	CookieFile      string
-	Headers         []string
-	IncludeHeaders  string
-	ExcludeHeaders  string
-	Crawl           bool
-	Depth           int
-	MaxURLs         int
-	Output          string
-	HTMLReport      string
-	PayloadFile     string
-	ShowPayloads    bool
-	ShowParams      bool
-	ShowHeaders     bool
-	Silent          bool
-	Verbose         bool
-	Version         bool
+	URL            string
+	File           string
+	Stdin          bool
+	BrowserKind    string
+	BrowserPath    string
+	NoBrowser      bool
+	Headless       bool
+	TimeoutMS      int
+	DelayMinMS     int
+	DelayMaxMS     int
+	Threads        int
+	Scan           string
+	WordlistFile   string
+	MiningOnly     bool
+	ParamsSpec     string
+	Exclude        string
+	Data           string
+	Cookie         string
+	CookieFile     string
+	Headers        []string
+	IncludeHeaders string
+	ExcludeHeaders string
+	Crawl          bool
+	Depth          int
+	MaxURLs        int
+	Output         string
+	HTMLReport     string
+	PayloadFile    string
+	ShowPayloads   bool
+	ShowParams     bool
+	ShowHeaders    bool
+	Silent         bool
+	Verbose        bool
+	Version        bool
 }
 
 // Parse builds Options from the argv slice. It prints help/version and exits

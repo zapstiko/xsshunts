@@ -1,0 +1,11 @@
+XSSHuntS is a Go reimplementation of XSSRush.
+
+Original project:
+  XSSRush - Automated Multi-Vector Cross-Site Scripting (XSS) Scanner
+  Copyright (c) N45HT
+  https://github.com/N45HT/XSSRush
+  Licensed under the MIT License.
+
+The original XSSRush copyright and MIT license notice are retained in the
+LICENSE file of this repository. Payload definitions, parameter/header
+knowledge bases and the audit pipeline are derived from XSSRush v2.1.1.

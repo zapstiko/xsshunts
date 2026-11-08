@@ -13,8 +13,8 @@ import (
 
 // payloadOutcome summarizes a single payload attempt at an injection point.
 type payloadOutcome struct {
-	Confirmed bool   // dialog verified
-	Candidate bool   // mere reflection
+	Confirmed bool // dialog verified
+	Candidate bool // mere reflection
 	Evidence  string
 	Dialog    string
 }
@@ -141,12 +141,12 @@ func postFieldsFrom(t models.Target, param, payloadStr string) map[string]string
 // recordFinding stores whichever confirmation level we reached.
 func recordFinding(s *Session, t models.Target, vector, param, contextKind, payloadStr string, out payloadOutcome, extra map[string]string) {
 	f := models.Finding{
-		Method:   methodFor(vector),
-		Vector:   vector,
+		Method:    methodFor(vector),
+		Vector:    vector,
 		Parameter: param,
-		Payload:  payloadStr,
-		Context:  contextKind,
-		Headers:  extra,
+		Payload:   payloadStr,
+		Context:   contextKind,
+		Headers:   extra,
 	}
 	f.URL = dialogURL(vector, t.URL, param, payloadStr)
 	if vector == models.VectorPost {
@@ -236,6 +236,8 @@ func urlDecodedContains(body, payload string) bool {
 	return strings.Contains(body, decoded)
 }
 
-func (p payloadOutcome) String() string { return fmt.Sprintf("confirmed=%v candidate=%v", p.Confirmed, p.Candidate) }
+func (p payloadOutcome) String() string {
+	return fmt.Sprintf("confirmed=%v candidate=%v", p.Confirmed, p.Candidate)
+}
 
 var _ = strconv.Itoa
