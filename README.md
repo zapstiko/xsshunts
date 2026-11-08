@@ -2,7 +2,7 @@
 
 **Automated Multi-Vector Cross-Site Scripting (XSS) Scanner & Auditor — written in Go, powered by Playwright.**
 
-XSSHuntS is an automated multi-vector XSS scanner and auditor written in Go by [zapstiko](https://github.com/zapstiko). It drives real headless browser instances through [Playwright Go](https://github.com/playwright-community/playwright-go) — Firefox, Chromium or WebKit — and hooks the browser event loop to intercept genuine JavaScript execution (`alert`, `confirm`, `prompt`). Findings are confirmed inside the DOM, eliminating the false positives typical of regex-only scanners.
+XSSHuntS is a Go implementation of [XSSRush](https://github.com/N45HT/XSSRush) by [N45HT](https://github.com/N45HT), created and maintained by [zapstiko](https://github.com/zapstiko). It drives real headless browser instances through [Playwright Go](https://github.com/playwright-community/playwright-go) — Firefox, Chromium or WebKit — and hooks the browser event loop to intercept genuine JavaScript execution (`alert`, `confirm`, `prompt`). Findings are confirmed inside the DOM, eliminating the false positives typical of regex-only scanners.
 
 > **Authorized testing only.** Use XSSHuntS strictly against systems you own or have explicit written permission to test.
 
@@ -21,7 +21,7 @@ XSSHuntS is an automated multi-vector XSS scanner and auditor written in Go by [
 - **WAF / rate-limit awareness** — fingerprints Cloudflare, AWS WAF/CloudFront, Akamai, Imperva, ModSecurity, Wordfence, Sucuri, F5, and 429 throttling; automatically doubles delays and backs off
 - **Authenticated scans** — cookie strings/files (Netscape, JSON, `k=v`), custom headers, per-target cookie handling
 - **Reports** — console summary and JSON export with raw HTTP request blocks, confidence scores and PoCs
-- **CLI** — full flag set (`-u`, `--scan`, `-m`, `-p`, `-d`, `-c`, `-H`, `--crawl`, `--show-*`, …)
+- **CLI parity** — mirrors XSSRush's flags (`-u`, `--scan`, `-m`, `-p`, `-d`, `-c`, `-H`, `--crawl`, `--show-*`, …)
 - **Two engines in one repo** — the main Playwright engine plus an experimental Chromium-only `chromedp` engine (`cmd/xsshunts-chromedp`)
 
 ---
@@ -269,7 +269,7 @@ For every payload, XSSHuntS registers a browser dialog watcher, navigates (or su
 
 ## Credits & License
 
-- **XSSHuntS** — created and maintained by [zapstiko](https://github.com/zapstiko).
+- **XSSHuntS** — created and maintained by [zapstiko](https://github.com/zapstiko), based on **XSSRush** by [N45HT](https://github.com/N45HT) — <https://github.com/N45HT/XSSRush> (MIT License).
 - Browser automation: [playwright-community/playwright-go](https://github.com/playwright-community/playwright-go).
 - Alternate engine: [chromedp](https://github.com/chromedp/chromedp).
 - Released under the [MIT License](LICENSE).
