@@ -267,6 +267,13 @@ For every payload, XSSHuntS registers a browser dialog watcher, navigates (or su
 
 ---
 
+## Credits
+
+- Created and maintained by [zapstiko](https://github.com/zapstiko).
+- Inspired by [XSSRush](https://github.com/N45HT/XSSRush) by [N45HT](https://github.com/N45HT).
+- Browser automation: [playwright-community/playwright-go](https://github.com/playwright-community/playwright-go).
+- Alternate engine: [chromedp](https://github.com/chromedp/chromedp).
+
 ## License
 
 Released under the [MIT License](LICENSE).
