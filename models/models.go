@@ -116,6 +116,7 @@ type ScanConfig struct {
 	Headers             map[string]string
 	Cookies             []CookieEntry
 	CookieString        string
+	UserAgent           string
 	Threads             int
 	Crawl               bool
 	Depth               int

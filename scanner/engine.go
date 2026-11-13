@@ -34,6 +34,9 @@ func NewEngine(cfg *models.ScanConfig, log *logger.Logger, bm *browser.Manager) 
 	if log == nil {
 		log = logger.NewLogger(cfg.Verbose, false)
 	}
+	if cfg.UserAgent != "" {
+		bm.UserAgent = cfg.UserAgent
+	}
 	return &Engine{
 		Config:         cfg,
 		Logger:         log,

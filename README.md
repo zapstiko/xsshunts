@@ -23,6 +23,7 @@ XSSHuntS is an automated multi-vector XSS scanner and auditor written in Go. It 
 - **Reports** — console summary and JSON export with raw HTTP request blocks, confidence scores and PoCs
 - **Self-update** — `--update` checks GitHub, downloads the latest release, verifies its SHA-256 checksum and replaces the running binary
 - **CLI** — full flag set (`-u`, `--scan`, `-m`, `-p`, `-d`, `-c`, `-H`, `--crawl`, `--show-*`, …)
+- **Burp Suite request import** — scan raw HTTP requests exported from Burp Suite (`-r request.txt`), reusing their headers, cookies, query parameters and urlencoded form fields
 - **Resilient setup** — if Playwright's download CDN is blocked, xsshunts bootstraps its driver from the npm registry and automatically uses an installed Chrome/Edge/Chromium, with fast launch timeouts instead of long hangs
 - **Two engines in one repo** — the main Playwright engine plus an experimental Chromium-only `chromedp` engine (`cmd/xsshunts-chromedp`)
 
@@ -188,7 +189,24 @@ xsshunts -u "https://target.com" --crawl --depth 3 --max-urls 100 -t 5 -m
 xsshunts --update
 ```
 
-### 14. Inspect the built-in knowledge bases
+### 14. Scan a request exported from Burp Suite
+
+In Burp Suite, right-click the request → **Copy to file** (or **Save item**), then:
+
+```bash
+# Scan the raw request, reusing its headers, cookies and form fields
+xsshunts -r request.txt --scan all
+
+# Read the raw request from stdin
+cat request.txt | xsshunts -r - --scan all
+
+# Force the scheme for relative request lines (default: auto-detect)
+xsshunts -r request.txt --request-scheme http
+```
+
+GET and POST requests are supported. Query parameters, `application/x-www-form-urlencoded` bodies, cookies and headers are reused during testing. JSON/multipart bodies are not fuzzed (URL, cookie and header vectors are still tested).
+
+### 15. Inspect the built-in knowledge bases
 
 ```bash
 xsshunts --show-payloads
@@ -204,6 +222,8 @@ xsshunts --show-headers
 Target Options:
   -u, --url URL                   Target URL to scan
   -f, --file FILE                 Load targets from file (one URL per line)
+  -r, --request FILE              Raw HTTP request from Burp Suite ('-' reads stdin)
+  --request-scheme http|https     Scheme for relative raw requests (default: auto)
 
 Browser & Engine Options:
   -b, --browser {firefox,chromium,webkit}
@@ -268,6 +288,7 @@ Output & Reporting Options:
 ├── models/                 Parameters, reflections, findings, scan config
 ├── modules/                7 pipeline modules (mining → headers)
 ├── parsers/                URL/action/postdata/path helpers
+├── rawrequest/             Burp/raw HTTP request parser
 ├── payloads/               Multi-context payload knowledge base
 ├── reporter/               Console summaries + JSON export
 ├── scanner/                Audit orchestrator

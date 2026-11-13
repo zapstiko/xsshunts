@@ -21,6 +21,7 @@ import (
 	"github.com/zapstiko/xsshunts/models"
 	"github.com/zapstiko/xsshunts/parsers"
 	"github.com/zapstiko/xsshunts/payloads"
+	"github.com/zapstiko/xsshunts/rawrequest"
 	"github.com/zapstiko/xsshunts/reporter"
 	"github.com/zapstiko/xsshunts/scanner"
 	"github.com/zapstiko/xsshunts/updater"
@@ -40,6 +41,8 @@ func (s *stringList) Set(v string) error {
 type cliOptions struct {
 	URL             string
 	File            string
+	RequestFile     string
+	RequestScheme   string
 	Browser         string
 	Channel         string
 	Headless        string
@@ -86,6 +89,9 @@ func buildFlagSet() (*flag.FlagSet, *cliOptions) {
 	fs.StringVar(&o.File, "file", "", "targets file")
 	fs.StringVar(&o.File, "l", "", "targets file (alias)")
 	fs.StringVar(&o.File, "list", "", "targets file (alias)")
+	fs.StringVar(&o.RequestFile, "r", "", "raw request file")
+	fs.StringVar(&o.RequestFile, "request", "", "raw request file")
+	fs.StringVar(&o.RequestScheme, "request-scheme", "", "raw request scheme")
 
 	fs.StringVar(&o.Browser, "b", "firefox", "browser engine")
 	fs.StringVar(&o.Browser, "browser", "firefox", "browser engine")
@@ -179,6 +185,8 @@ Usage:
 Target Options:
   -u, --url URL                 Target URL to scan (e.g. https://example.com/search?q=test)
   -f, --file FILE               Load targets from file (one URL per line)
+  -r, --request FILE            Raw HTTP request from Burp Suite ('-' reads stdin)
+  --request-scheme http|https   Scheme for relative raw requests (default: auto)
 
 Browser & Engine Options:
   -b, --browser ENGINE          Browser engine: firefox, chromium, webkit (default: firefox)
@@ -305,13 +313,55 @@ func run() int {
 		return 2
 	}
 	isHeadless := headlessLower == "true"
+	requestScheme := strings.ToLower(strings.TrimSpace(opts.RequestScheme))
+	if requestScheme != "" && requestScheme != "http" && requestScheme != "https" {
+		fmt.Fprintf(os.Stderr, "xsshunts: error: argument --request-scheme: invalid choice: '%s' (choose from 'http', 'https')\n", opts.RequestScheme)
+		return 2
+	}
 
 	log := logger.NewLogger(opts.Verbose, opts.Silent)
 	log.PrintBanner()
 
-	rawTargets := loadTargetURLs(opts)
+	var rawSpec *rawrequest.Request
+	var requestCookies []models.CookieEntry
+	var rawTargets []string
+
+	if strings.TrimSpace(opts.RequestFile) != "" {
+		if strings.TrimSpace(opts.URL) != "" || strings.TrimSpace(opts.File) != "" {
+			fmt.Fprintln(os.Stderr, "xsshunts: error: use either --request or --url/--file, not both")
+			return 2
+		}
+		var data []byte
+		var readErr error
+		if opts.RequestFile == "-" {
+			data, readErr = io.ReadAll(os.Stdin)
+		} else {
+			data, readErr = os.ReadFile(opts.RequestFile)
+		}
+		if readErr != nil {
+			fmt.Fprintf(os.Stderr, "xsshunts: error: could not read raw request: %v\n", readErr)
+			return 2
+		}
+		scheme := requestScheme
+		if scheme == "" {
+			scheme = strings.ToLower(strings.TrimSpace(os.Getenv("XSSHUNTS_REQUEST_SCHEME")))
+		}
+		spec, parseErr := rawrequest.Parse(data, scheme)
+		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "xsshunts: error: invalid raw request: %v\n", parseErr)
+			return 2
+		}
+		rawSpec = spec
+		requestCookies = spec.Cookies
+		if spec.UnsupportedBody != "" && !opts.Silent {
+			log.Warning(spec.UnsupportedBody)
+		}
+		rawTargets = []string{spec.URL}
+	} else {
+		rawTargets = loadTargetURLs(opts)
+	}
 	if len(rawTargets) == 0 {
-		fmt.Fprintf(os.Stderr, "xsshunts: error: target URL is required via -u/--url, -f/--file, or standard input pipe\n")
+		fmt.Fprintf(os.Stderr, "xsshunts: error: target URL is required via -u/--url, -f/--file, -r/--request, or standard input pipe\n")
 		fmt.Fprintln(os.Stderr, "(use 'xsshunts -h' or 'xsshunts --help' to view all available options)")
 		return 2
 	}
@@ -333,9 +383,23 @@ func run() int {
 	}
 
 	customHeaders := parseCustomHeaders(opts.Headers)
+	if rawSpec != nil {
+		customHeaders = mergeHeaderMaps(rawSpec.Headers, customHeaders)
+	}
+	targetUserAgent := ""
+	if rawSpec != nil {
+		targetUserAgent = rawSpec.UserAgent
+	}
+	if ua, ok := headerValueFold(customHeaders, "User-Agent"); ok {
+		targetUserAgent = ua
+		deleteHeaderFold(customHeaders, "User-Agent")
+	}
+
 	var customPostfields map[string]string
 	if strings.TrimSpace(opts.Data) != "" {
 		customPostfields = parsers.ParsePostfieldsString(opts.Data)
+	} else if rawSpec != nil && len(rawSpec.Postfields) > 0 {
+		customPostfields = rawSpec.Postfields
 	}
 
 	scanModules := parseScanModules(opts.Scan)
@@ -428,6 +492,7 @@ func run() int {
 
 	if opts.Crawl {
 		crawlManager := browser.NewManager(opts.Browser, isHeadless, opts.Timeout, customHeaders, nil)
+		crawlManager.UserAgent = targetUserAgent
 		crawlSess, err := crawlManager.NewSession()
 		if err != nil {
 			log.Error("crawler browser start failed: " + err.Error())
@@ -498,6 +563,7 @@ func run() int {
 		cfg.Headers = targetHeaders
 		cfg.Cookies = targetCookies
 		cfg.CookieString = cookieHeader
+		cfg.UserAgent = targetUserAgent
 		cfg.Threads = threads
 		cfg.Crawl = opts.Crawl
 		cfg.Depth = depth
@@ -507,6 +573,10 @@ func run() int {
 
 	prepareCookiesAndHeaders := func(targetURL string) ([]models.CookieEntry, string, map[string]string) {
 		cookies, cookieHeader := loadCookiesConfig(opts.Cookie, opts.CookieFile, baseDir, targetURL)
+		if len(requestCookies) > 0 {
+			cookies = mergeCookieEntries(requestCookies, cookies)
+			cookieHeader = cookieHeaderFromEntries(cookies)
+		}
 		targetHeaders := map[string]string{}
 		for k, v := range customHeaders {
 			targetHeaders[k] = v
@@ -532,6 +602,7 @@ func run() int {
 		}
 
 		sharedManager := browser.NewManager(opts.Browser, isHeadless, opts.Timeout, customHeaders, nil)
+		sharedManager.UserAgent = targetUserAgent
 		sem := make(chan struct{}, threads)
 		done := make(chan struct{})
 		go func() {
@@ -597,6 +668,63 @@ func run() int {
 	}
 
 	return 0
+}
+
+// mergeHeaderMaps overlays override onto base case-insensitively.
+func mergeHeaderMaps(base, override map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range override {
+		deleteHeaderFold(out, k)
+		out[k] = v
+	}
+	return out
+}
+
+func headerValueFold(headers map[string]string, name string) (string, bool) {
+	for k, v := range headers {
+		if strings.EqualFold(k, name) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+func deleteHeaderFold(headers map[string]string, name string) {
+	for k := range headers {
+		if strings.EqualFold(k, name) {
+			delete(headers, k)
+		}
+	}
+}
+
+// mergeCookieEntries merges cookies by name; override values win.
+func mergeCookieEntries(base, override []models.CookieEntry) []models.CookieEntry {
+	index := map[string]int{}
+	var out []models.CookieEntry
+	for _, c := range base {
+		index[c.Name] = len(out)
+		out = append(out, c)
+	}
+	for _, c := range override {
+		if idx, ok := index[c.Name]; ok {
+			out[idx] = c
+			continue
+		}
+		index[c.Name] = len(out)
+		out = append(out, c)
+	}
+	return out
+}
+
+func cookieHeaderFromEntries(entries []models.CookieEntry) string {
+	var parts []string
+	for _, c := range entries {
+		parts = append(parts, c.Name+"="+c.Value)
+	}
+	return strings.Join(parts, "; ")
 }
 
 // runEngineSafe runs one target scan and converts an unexpected internal panic

@@ -19,6 +19,7 @@ import (
 type Manager struct {
 	BrowserType string
 	Channel     string
+	UserAgent   string
 	Headless    bool
 	TimeoutMS   int
 	Headers     map[string]string
@@ -159,6 +160,9 @@ func (m *Manager) NewContext(extraHeaders map[string]string, customUserAgent str
 	}
 
 	userAgent := customUserAgent
+	if userAgent == "" {
+		userAgent = m.UserAgent
+	}
 	if userAgent == "" {
 		userAgent = config.DefaultUserAgent
 	}
