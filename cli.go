@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/zapstiko/xsshunts/appmeta"
 	"github.com/zapstiko/xsshunts/browser"
@@ -72,8 +71,6 @@ type cliOptions struct {
 	Help            bool
 	Version         bool
 	Update          bool
-	CheckUpdate     bool
-	NoUpdateCheck   bool
 	InstallBrowsers bool
 }
 
@@ -164,8 +161,6 @@ func buildFlagSet() (*flag.FlagSet, *cliOptions) {
 
 	fs.BoolVar(&o.Version, "version", false, "show version")
 	fs.BoolVar(&o.Update, "update", false, "update to the latest release")
-	fs.BoolVar(&o.CheckUpdate, "check-update", false, "check for the latest release")
-	fs.BoolVar(&o.NoUpdateCheck, "no-update-check", false, "disable startup update check")
 
 	fs.BoolVar(&o.InstallBrowsers, "install-browsers", false, "install Playwright browsers and exit")
 
@@ -219,9 +214,7 @@ Information Options:
   --show-headers                Show all built-in target HTTP headers and exit
 
 Update Options:
-  --update                      Download and install the latest GitHub release, then exit
-  --check-update                Check whether a newer release is available, then exit
-  --no-update-check             Disable the automatic update check at startup
+  --update                      Update xsshunts to the latest GitHub release and exit
 
 Output & Reporting Options:
   -o, --output FILE             Save report JSON (saved to output/ unless absolute path given)
@@ -260,8 +253,8 @@ func run() int {
 		return 0
 	}
 
-	if opts.Update || opts.CheckUpdate {
-		return runUpdate(opts.CheckUpdate)
+	if opts.Update {
+		return runUpdate()
 	}
 
 	if opts.Channel != "" {
@@ -318,8 +311,6 @@ func run() int {
 		}
 		return 1
 	}
-
-	maybeNotifyUpdate(opts)
 
 	customHeaders := parseCustomHeaders(opts.Headers)
 	var customPostfields map[string]string
@@ -975,8 +966,8 @@ func loadCookiesConfig(rawCookie, cookieFile, baseDir, targetURL string) ([]mode
 	return final, header
 }
 
-// runUpdate checks GitHub for the latest release and optionally installs it.
-func runUpdate(checkOnly bool) int {
+// runUpdate checks GitHub for the latest release and installs it.
+func runUpdate() int {
 	fmt.Println("[*] checking GitHub for the latest release...")
 	release, err := updater.FetchLatest()
 	if err != nil {
@@ -990,13 +981,6 @@ func runUpdate(checkOnly bool) int {
 
 	if !updater.IsNewer(current, release.TagName) {
 		fmt.Printf("[+] xsshunts is up to date\n")
-		return 0
-	}
-
-	if checkOnly {
-		fmt.Printf("[!] update available: v%s -> %s\n", current, release.TagName)
-		fmt.Printf("    %s\n", release.HTMLURL)
-		fmt.Println("    run 'xsshunts --update' to install it")
 		return 0
 	}
 
@@ -1035,38 +1019,4 @@ func runUpdate(checkOnly bool) int {
 
 	fmt.Printf("[+] xsshunts updated: v%s -> %s (%s)\n", current, release.TagName, result.Path)
 	return 0
-}
-
-// maybeNotifyUpdate performs a short, best-effort startup update check.
-func maybeNotifyUpdate(opts *cliOptions) {
-	if opts.Silent || opts.NoUpdateCheck || opts.Update || opts.CheckUpdate {
-		return
-	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("XSSHUNTS_NO_UPDATE_CHECK"))) {
-	case "1", "true", "yes":
-		return
-	}
-
-	type result struct {
-		tag string
-	}
-	done := make(chan result, 1)
-	go func() {
-		release, err := updater.FetchLatest()
-		if err != nil {
-			done <- result{}
-			return
-		}
-		done <- result{tag: release.TagName}
-	}()
-
-	select {
-	case res := <-done:
-		if res.tag != "" && updater.IsNewer(appmeta.Version, res.tag) {
-			fmt.Printf("\n\033[1m\033[33m[!]\033[0m New version %s available (current v%s). Run 'xsshunts --update' to install.\n\n",
-				res.tag, appmeta.Version)
-		}
-	case <-time.After(1200 * time.Millisecond):
-		// GitHub was slow or offline; never delay a scan for an update notice.
-	}
 }
