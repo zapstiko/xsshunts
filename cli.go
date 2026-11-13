@@ -545,8 +545,7 @@ func run() int {
 					}
 					cookies, cookieHeader, headers := prepareCookiesAndHeaders(item.URL)
 					cfg := buildConfig(item, cookies, cookieHeader, headers)
-					engine := scanner.NewEngine(cfg, log, sharedManager)
-					findings, parameters := engine.Run()
+					findings, parameters := runEngineSafe(cfg, log, sharedManager)
 					resultsMu <- struct{}{}
 					allFindings = append(allFindings, findings...)
 					allParameters = append(allParameters, parameters...)
@@ -570,8 +569,7 @@ func run() int {
 			}
 			cookies, cookieHeader, headers := prepareCookiesAndHeaders(item.URL)
 			cfg := buildConfig(item, cookies, cookieHeader, headers)
-			engine := scanner.NewEngine(cfg, log, nil)
-			findings, parameters := engine.Run()
+			findings, parameters := runEngineSafe(cfg, log, nil)
 			allFindings = append(allFindings, findings...)
 			allParameters = append(allParameters, parameters...)
 
@@ -599,6 +597,17 @@ func run() int {
 	}
 
 	return 0
+}
+
+// runEngineSafe runs one target scan and converts an unexpected internal panic
+// into an error so a single target cannot crash the whole process.
+func runEngineSafe(cfg *models.ScanConfig, log *logger.Logger, bm *browser.Manager) (findings []*models.XSSFinding, parameters []*models.Parameter) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error(fmt.Sprintf("scan aborted by an internal error: %v", r))
+		}
+	}()
+	return scanner.NewEngine(cfg, log, bm).Run()
 }
 
 func printSilentReflections(parameters []*models.Parameter) {

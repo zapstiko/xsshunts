@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -337,12 +338,35 @@ func (s *Session) OuterHTML() (string, error) {
 	return str, nil
 }
 
-// Eval evaluates JavaScript.
+// Eval evaluates JavaScript. Arguments are normalized to JSON-compatible
+// values because playwright-go cannot serialize nested Go maps such as
+// map[string]string or []map[string]string.
 func (s *Session) Eval(expression string, args ...any) (any, error) {
 	if len(args) == 0 {
 		return s.Page.Evaluate(expression)
 	}
-	return s.Page.Evaluate(expression, args...)
+	normalized := make([]any, len(args))
+	for i, arg := range args {
+		normalized[i] = toJSValue(arg)
+	}
+	return s.Page.Evaluate(expression, normalized...)
+}
+
+// toJSValue converts arbitrary Go values into the primitives and containers
+// that playwright-go's serializer understands.
+func toJSValue(v any) any {
+	if v == nil {
+		return nil
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out any
+	if err := json.Unmarshal(data, &out); err != nil {
+		return v
+	}
+	return out
 }
 
 // WaitForTimeout pauses the page for the given milliseconds.
