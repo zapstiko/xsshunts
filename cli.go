@@ -262,13 +262,33 @@ func run() int {
 	}
 
 	if opts.InstallBrowsers {
-		fmt.Println("[*] downloading Playwright browsers (firefox, chromium, webkit)...")
-		if err := browser.EnsureInstalled("firefox", "chromium", "webkit"); err != nil {
-			fmt.Fprintf(os.Stderr, "xsshunts: error: %v\n", err)
+		fmt.Println("[*] installing Playwright runtime and browser engines...")
+		if err := browser.InstallBrowsers("firefox", "chromium", "webkit"); err == nil {
+			fmt.Println("[+] browser engines installed")
+			return 0
+		} else {
+			fmt.Printf("[!] browser engine download failed: %v\n", err)
+		}
+
+		fmt.Println("[*] trying the npm driver fallback...")
+		driverDir, err := browser.EnsureRuntime()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "xsshunts: error: could not set up the Playwright runtime: %v\n", err)
 			return 1
 		}
-		fmt.Println("[+] browser engines installed")
-		return 0
+		if chrome := browser.SystemChromePath(); chrome != "" {
+			if driverDir != "" {
+				fmt.Println("[+] Playwright driver is ready (bootstrapped from the npm registry).")
+			} else {
+				fmt.Println("[+] Playwright driver is ready.")
+			}
+			fmt.Printf("[+] Found installed browser: %s\n", chrome)
+			fmt.Println("[+] xsshunts will use it automatically when a Playwright engine is unavailable.")
+			return 0
+		}
+		fmt.Fprintln(os.Stderr, "xsshunts: error: browser downloads are blocked and no installed Chrome/Edge/Chromium was found.")
+		fmt.Fprintln(os.Stderr, "Install Google Chrome (or set XSSHUNTS_BROWSER_PATH) and run --install-browsers again.")
+		return 1
 	}
 
 	if handleShowOptions(opts) {

@@ -115,6 +115,9 @@ func (e *Engine) Run() ([]*models.XSSFinding, []*models.Parameter) {
 		}
 		return nil, nil
 	}
+	if e.BrowserManager.FallbackNotice != "" {
+		log.Warning(e.BrowserManager.FallbackNotice)
+	}
 	defer func() {
 		sess.Close()
 		if e.OwnBrowser {

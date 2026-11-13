@@ -23,6 +23,7 @@ XSSHuntS is an automated multi-vector XSS scanner and auditor written in Go. It 
 - **Reports** — console summary and JSON export with raw HTTP request blocks, confidence scores and PoCs
 - **Self-update** — `--update` checks GitHub, downloads the latest release, verifies its SHA-256 checksum and replaces the running binary
 - **CLI** — full flag set (`-u`, `--scan`, `-m`, `-p`, `-d`, `-c`, `-H`, `--crawl`, `--show-*`, …)
+- **Resilient setup** — if Playwright's download CDN is blocked, xsshunts bootstraps its driver from the npm registry and automatically uses an installed Chrome/Edge/Chromium, with fast launch timeouts instead of long hangs
 - **Two engines in one repo** — the main Playwright engine plus an experimental Chromium-only `chromedp` engine (`cmd/xsshunts-chromedp`)
 
 ---
@@ -55,6 +56,7 @@ XSSHuntS is an automated multi-vector XSS scanner and auditor written in Go. It 
 
 - Go **1.26+**
 - Network access to download Playwright browser engines
+- Node.js on `PATH` (only used as a fallback when Playwright's CDN is unavailable)
 
 ```bash
 # Install the binary
@@ -284,6 +286,30 @@ Output & Reporting Options:
 For every payload, XSSHuntS registers a browser dialog watcher, navigates (or submits a form) with the payload, then checks whether the dialog's type and message match the payload's expected canary (e.g. `alert("9")`). Only a matching dialog marks a finding as **verified XSS**. When dialog execution is impossible (e.g. event handlers that do not fire in the harness), a DOM reflection match is recorded as **potential** with a lower confidence score.
 
 ---
+
+## Troubleshooting
+
+### Playwright downloads are blocked (HTTP 400 / 404)
+
+Some networks block Playwright's browser CDN. xsshunts handles this automatically:
+
+1. **Driver fallback** — if the official Playwright driver download fails, xsshunts bootstraps the same driver from the npm registry (`playwright-core`) using the system Node.js runtime.
+2. **Browser fallback** — if a Playwright browser engine cannot be downloaded or launched, xsshunts automatically uses an installed Google Chrome, Microsoft Edge, Chromium or Brave browser.
+
+Useful controls:
+
+```bash
+xsshunts --install-browsers          # set up the driver and report usable engines
+xsshunts -u "https://target.com" -b chromium --channel chrome
+
+# Point at a specific browser binary
+XSSHUNTS_BROWSER_PATH="/path/to/chrome" xsshunts -u "https://target.com"
+
+# Cap browser startup time (milliseconds) before falling back
+XSSHUNTS_LAUNCH_TIMEOUT_MS=8000 xsshunts -u "https://target.com"
+```
+
+The npm driver fallback requires Node.js and access to `registry.npmjs.org`. When no Playwright engine and no system Chromium-based browser are available, install Google Chrome or use the Node-free `xsshunts-chromedp` binary.
 
 ## Credits
 

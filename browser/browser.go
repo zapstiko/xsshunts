@@ -4,7 +4,6 @@ package browser
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -23,6 +22,10 @@ type Manager struct {
 	TimeoutMS   int
 	Headers     map[string]string
 	Cookies     []models.CookieEntry
+
+	// FallbackNotice explains when an installed browser was used because the
+	// requested Playwright engine could not be launched.
+	FallbackNotice string
 
 	pw      *playwright.Playwright
 	browser playwright.Browser
@@ -53,13 +56,13 @@ func copyStringMap(in map[string]string) map[string]string {
 	return out
 }
 
-// EnsureInstalled downloads the Playwright driver and the requested browser.
+// EnsureInstalled downloads the Playwright driver and the requested browsers.
 func EnsureInstalled(browsers ...string) error {
-	opts := &playwright.RunOptions{Verbose: false, Browsers: browsers}
-	return playwright.Install(opts)
+	return InstallBrowsers(browsers...)
 }
 
-// Start launches the browser process, auto-installing missing pieces once.
+// Start launches the browser, bootstrapping the Playwright driver from npm and
+// falling back to an installed Chrome/Edge when engine downloads are blocked.
 func (m *Manager) Start() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -67,17 +70,11 @@ func (m *Manager) Start() error {
 		return nil
 	}
 
-	pw, err := playwright.Run(&playwright.RunOptions{Verbose: false, Stdout: io.Discard})
+	requestedEngine := m.BrowserType
+
+	pw, driverDir, err := startPlaywright()
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "install the driver") {
-			if installErr := EnsureInstalled(m.BrowserType); installErr != nil {
-				return fmt.Errorf("playwright install failed: %w", installErr)
-			}
-			pw, err = playwright.Run(&playwright.RunOptions{Verbose: false, Stdout: io.Discard})
-		}
-		if err != nil {
-			return fmt.Errorf("could not start playwright: %w", err)
-		}
+		return fmt.Errorf("could not start playwright: %w", err)
 	}
 
 	engine, err := m.engine(pw)
@@ -86,29 +83,35 @@ func (m *Manager) Start() error {
 		return err
 	}
 
-	browser, err := engine.Launch(m.launchOptions())
-	if err != nil {
-		// Browser binaries may not be downloaded yet; install and retry once.
-		if installErr := EnsureInstalled(m.BrowserType); installErr == nil {
-			browser, err = engine.Launch(m.launchOptions())
+	browser, launchErr := engine.Launch(m.launchOptions())
+	if launchErr != nil && SystemChromePath() == "" {
+		// Download the engine binary only when no system browser can replace it.
+		_ = installBrowsersWithDriver(driverDir, m.BrowserType)
+		browser, launchErr = engine.Launch(m.launchOptions())
+	}
+
+	// Chromium build unavailable: use an installed Chrome/Edge/Chromium.
+	if launchErr != nil && m.BrowserType == "chromium" && m.Channel == "" {
+		if b, desc, sysErr := launchSystemBrowser(pw, m.Headless); sysErr == nil {
+			browser, launchErr = b, nil
+			m.Channel = desc
+			m.FallbackNotice = fmt.Sprintf("using installed Chromium-based browser (%s) because Playwright's chromium build is unavailable", desc)
 		}
-		// For Chromium, fall back to any installed Chrome/Edge channel.
-		if err != nil && m.BrowserType == "chromium" && m.Channel == "" {
-			for _, channel := range []string{"chrome", "msedge"} {
-				browser, err = engine.Launch(playwright.BrowserTypeLaunchOptions{
-					Headless: playwright.Bool(m.Headless),
-					Channel:  playwright.String(channel),
-				})
-				if err == nil {
-					m.Channel = channel
-					break
-				}
-			}
+	}
+
+	// Any other engine unavailable: switch to the installed system browser.
+	if launchErr != nil && m.BrowserType != "chromium" {
+		if b, desc, sysErr := launchSystemBrowser(pw, m.Headless); sysErr == nil {
+			browser, launchErr = b, nil
+			m.BrowserType = "chromium"
+			m.Channel = desc
+			m.FallbackNotice = fmt.Sprintf("using installed Chromium-based browser (%s) because the Playwright %s engine is unavailable", desc, requestedEngine)
 		}
-		if err != nil {
-			pw.Stop()
-			return fmt.Errorf("could not launch %s: %w (hint: run `xsshunts --install-browsers` or set XSSHUNTS_CHANNEL=chrome)", m.BrowserType, err)
-		}
+	}
+
+	if launchErr != nil {
+		pw.Stop()
+		return fmt.Errorf("could not launch %s: %w (hint: install Google Chrome/Chromium, set XSSHUNTS_BROWSER_PATH, or run `xsshunts --install-browsers`)", requestedEngine, launchErr)
 	}
 
 	m.pw = pw
@@ -133,6 +136,7 @@ func (m *Manager) engine(pw *playwright.Playwright) (playwright.BrowserType, err
 func (m *Manager) launchOptions() playwright.BrowserTypeLaunchOptions {
 	opts := playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(m.Headless),
+		Timeout:  playwright.Float(launchTimeoutMS()),
 	}
 	if m.Channel != "" {
 		opts.Channel = playwright.String(m.Channel)
