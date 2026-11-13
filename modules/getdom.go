@@ -78,6 +78,10 @@ func RunGetDOMXSS(sess *browser.Session, parameters []*models.Parameter, cfg *mo
 				continue
 			}
 
+			if log != nil {
+				log.Trying(payloadData.Name, payloadData.Payload)
+			}
+
 			delayMin, delayMax := cfg.GetDelays()
 			utils.DelayMs(delayMin, delayMax)
 

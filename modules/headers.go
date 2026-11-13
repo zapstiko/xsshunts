@@ -109,6 +109,10 @@ func RunHeaderBasedXSS(bm *browser.Manager, targetURL string, cfg *models.ScanCo
 				continue
 			}
 
+			if log != nil {
+				log.Trying(payloadData.Name, payloadData.Payload)
+			}
+
 			delayMin, delayMax := cfg.GetDelays()
 			utils.DelayMs(delayMin, delayMax)
 

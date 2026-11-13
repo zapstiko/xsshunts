@@ -226,7 +226,7 @@ Update Options:
 
 Output & Reporting Options:
   -o, --output FILE             Save report JSON (saved to output/ unless absolute path given)
-  -s, --silent                  Silent mode (banner + findings only; no progress output)
+  -s, --silent                  Silent mode (banner + live payload line; only verified findings remain)
   -v, --verbose                 Enable verbose debugging output
   -h, --help                    Show this help message and exit
   --version                     Show program's version number and exit
@@ -731,6 +731,7 @@ func cookieHeaderFromEntries(entries []models.CookieEntry) string {
 // into an error so a single target cannot crash the whole process.
 func runEngineSafe(cfg *models.ScanConfig, log *logger.Logger, bm *browser.Manager) (findings []*models.XSSFinding, parameters []*models.Parameter) {
 	defer func() {
+		log.ClearStatus()
 		if r := recover(); r != nil {
 			log.Error(fmt.Sprintf("scan aborted by an internal error: %v", r))
 		}

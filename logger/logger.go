@@ -170,6 +170,28 @@ func (l *Logger) StartParamTest(paramName string, method, context string) {
 	fmt.Printf("[*] testing parameter %s%s%s [%s]%s\n\n", SoftTeal, paramDisplay, Reset, method, ctxStr)
 }
 
+// Trying prints a transient "trying payload" status line in silent mode. The
+// next attempt overwrites it and findings clear it, so only valid findings stay.
+func (l *Logger) Trying(payloadName, payloadStr string) {
+	if !l.Silent {
+		return
+	}
+	line := fmt.Sprintf("[*] trying payload: %s (%s)", payloadName, payloadStr)
+	line = strings.NewReplacer("\n", " ", "\r", " ").Replace(line)
+	if len(line) > 130 {
+		line = line[:127] + "..."
+	}
+	fmt.Printf("\r\033[2K%s%s%s", Dim, line, Reset)
+}
+
+// ClearStatus erases the transient silent-mode status line.
+func (l *Logger) ClearStatus() {
+	if !l.Silent {
+		return
+	}
+	fmt.Print("\r\033[2K")
+}
+
 // TestBlockOpts carries the fields of a test block printout.
 type TestBlockOpts struct {
 	Method      string
@@ -190,6 +212,7 @@ type TestBlockOpts struct {
 func (l *Logger) TestBlock(o TestBlockOpts) {
 	if l.Silent {
 		if o.IsXSS {
+			l.ClearStatus()
 			tag := fmt.Sprintf("%s%s[CRITICAL]%s", Bold, Red, Reset)
 			fmt.Printf("%s %s\n", tag, o.RequestDesc)
 			fmt.Printf("  Payload    : %s (%s%s%s)\n", o.PayloadName, Yellow, o.PayloadStr, Reset)
@@ -203,6 +226,7 @@ func (l *Logger) TestBlock(o TestBlockOpts) {
 			return
 		}
 		if o.IsMatch {
+			l.ClearStatus()
 			tag := fmt.Sprintf("%s%s[POTENTIAL]%s", Bold, SoftOrange, Reset)
 			extra := ""
 			if o.Postfields != "" {
