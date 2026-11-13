@@ -158,3 +158,87 @@ func assertTechnique(t *testing.T, a *Analysis, key string) {
 	}
 	t.Fatalf("technique %q not selected: %+v", key, a.Techniques)
 }
+
+func TestBlobAndUnsafeHashes(t *testing.T) {
+	p := Parse(map[string]string{
+		"Content-Security-Policy": "script-src 'self' blob: 'unsafe-hashes'",
+	}, "")
+	a := Analyze(p)
+	if !a.BlobAllowed || !a.UnsafeHashes {
+		t.Fatalf("scheme/hash flags missing: %+v", a)
+	}
+	assertTechnique(t, a, "blob_uri")
+	assertTechnique(t, a, "unsafe_hashes")
+}
+
+func TestAngularInPage(t *testing.T) {
+	p := Parse(map[string]string{
+		"Content-Security-Policy": "script-src 'self'",
+	}, `<html><body><div ng-app ng-csp>{{1+1}}</div></body></html>`)
+	a := Analyze(p)
+	if !a.AngularInPage {
+		t.Fatalf("in-page Angular not detected: %+v", a)
+	}
+	assertTechnique(t, a, "angular_dom")
+	payloads := BypassPayloads(a, false)
+	found := false
+	for _, payload := range payloads {
+		if payload.Key == "angular_dom" && strings.Contains(payload.Payload, "ng-app") && !strings.Contains(payload.Payload, "<script src") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("in-page angular payload missing: %+v", payloads)
+	}
+}
+
+func TestWildcardSubdomain(t *testing.T) {
+	p := Parse(map[string]string{
+		"Content-Security-Policy": "script-src 'self' https://*.example.com; frame-src https://frames.example.com",
+	}, "")
+	a := Analyze(p)
+	if len(a.WildcardHosts) == 0 || a.WildcardHosts[0] != "example.com" {
+		t.Fatalf("wildcard hosts not detected: %+v", a.WildcardHosts)
+	}
+	assertTechnique(t, a, "wildcard_subdomain_takeover")
+	assertTechnique(t, a, "frame_src_allowlist")
+}
+
+func TestTrustedTypesReportOnly(t *testing.T) {
+	p := Parse(map[string]string{
+		"Content-Security-Policy":             "script-src 'self'",
+		"Content-Security-Policy-Report-Only": "require-trusted-types-for 'script'; trusted-types dompurify",
+	}, "")
+	a := Analyze(p)
+	if !a.TrustedTypesReportOnly {
+		t.Fatalf("report-only Trusted Types not detected: %+v", a)
+	}
+	assertTechnique(t, a, "trusted_types_report_only")
+}
+
+func TestPHPAndReportEndpoint(t *testing.T) {
+	p := Parse(map[string]string{
+		"Content-Security-Policy": "script-src 'self'; report-uri /csp-report",
+		"X-Powered-By":            "PHP/8.3.0",
+	}, "")
+	a := Analyze(p)
+	if !a.PHP || !a.HasReport {
+		t.Fatalf("PHP/report flags missing: %+v", a)
+	}
+	assertTechnique(t, a, "php_header_strip")
+	assertTechnique(t, a, "csp_report_exfil")
+}
+
+func TestExpandedTechniqueCategories(t *testing.T) {
+	techniques := AllTechniques()
+	if len(techniques) < 35 {
+		t.Fatalf("expected an expanded knowledge base, got %d techniques", len(techniques))
+	}
+	categories := map[string]bool{}
+	for _, technique := range techniques {
+		categories[CategoryFor(technique.Key)] = true
+	}
+	if len(categories) < 8 {
+		t.Fatalf("expected multiple categories, got %d: %v", len(categories), categories)
+	}
+}

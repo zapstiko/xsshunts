@@ -774,13 +774,27 @@ func handleShowOptions(opts *cliOptions) bool {
 	}
 	if opts.ShowCSP {
 		handled = true
-		for _, technique := range csp.AllTechniques() {
-			fmt.Printf("\n[%s] %s\n%s\n", technique.Key, technique.Name, technique.Description)
-			for _, payload := range technique.Payloads {
-				fmt.Printf("  payload: %s\n", payload)
+		techniques := csp.AllTechniques()
+		fmt.Printf("CSP bypass knowledge base: %d techniques\n", len(techniques))
+		grouped := map[string][]csp.Technique{}
+		var categoryOrder []string
+		for _, technique := range techniques {
+			category := csp.CategoryFor(technique.Key)
+			if _, exists := grouped[category]; !exists {
+				categoryOrder = append(categoryOrder, category)
 			}
-			if len(technique.References) > 0 {
-				fmt.Printf("  refs: %s\n", strings.Join(technique.References, ", "))
+			grouped[category] = append(grouped[category], technique)
+		}
+		for _, category := range categoryOrder {
+			fmt.Printf("\n=== %s ===\n", category)
+			for _, technique := range grouped[category] {
+				fmt.Printf("\n[%s] %s\n%s\n", technique.Key, technique.Name, technique.Description)
+				for _, payload := range technique.Payloads {
+					fmt.Printf("  payload: %s\n", payload)
+				}
+				if len(technique.References) > 0 {
+					fmt.Printf("  refs: %s\n", strings.Join(technique.References, ", "))
+				}
 			}
 		}
 	}

@@ -324,27 +324,50 @@ Output & Reporting Options:
 
 ## CSP Bypass Techniques
 
-`--show-csp` prints the full built-in knowledge base. The analysis engine selects applicable techniques based on the observed policy:
+`--show-csp` prints the full built-in knowledge base: **38 techniques across 10 categories**, grouped for review. The analysis engine selects applicable techniques based on the observed policy:
 
+**Policy absence & monitoring**
 - No CSP / Report-Only CSP
-- `'unsafe-inline'` (inline scripts and event handlers)
-- `'unsafe-eval'` (eval/Function gadgets)
+
+**Inline & eval**
+- `'unsafe-inline'`, `'unsafe-eval'`, `'unsafe-hashes'` (hashed inline handlers)
+
+**Nonce / strict-dynamic**
 - **Nonce reuse** — reuse a nonce visible in the DOM for an injected script (works with `'strict-dynamic'`)
-- `'strict-dynamic'` trusted-loader/script gadgets
-- Wildcard, `https:`, `http:` and wildcard-host allowlists
-- `data:` script sources
-- **AngularJS gadget from an allowlisted CDN** (cdnjs, googleapis, jsDelivr, unpkg, code.angularjs.org)
+- `'strict-dynamic'` trusted-loader / script gadgets
+
+**Allowlist bypass**
+- Wildcards (`*`, `https:`, `http:`), wildcard subdomains + subdomain takeover/JSONP
+- **AngularJS gadgets** — in-page Angular, allowlisted CDN builds, and Prototype/MooTools window-returning gadgets
 - JSONP endpoints on allowlisted hosts (JSONBee)
-- Missing `base-uri` (base-tag hijacking)
-- Missing `object-src` (legacy plugins)
 - Abusable third-party allowlists (CloudFront, S3, Azure, Heroku, Firebase, jsDelivr, …)
 - Same-origin uploads with `script-src 'self'`
 - Path restriction bypass via redirects / Relative Path Overwrite
+- Allowed `frame-src` host under attacker control
+
+**Source schemes**
+- `data:` and `blob:` script sources
+
+**Directive gaps**
+- Missing `base-uri` (base-tag hijacking), `object-src` (legacy plugins), `form-action` (credential theft), `frame-ancestors` (clickjacking)
+- Dangling markup injection
+
+**Injection**
 - CSP policy injection (`script-src-elem` / `script-src-attr`, legacy `;_`)
+- CSP header injection / response splitting
+
+**DOM & workers**
 - DOM XSS sinks not covered by CSP
 - Service worker `importScripts()`
-- Weak Trusted Types deployments
-- Missing `form-action` (credential-theft / Referer leakage)
+- Trusted Types weaknesses, including Report-Only deployment
+
+**Server & browser quirks**
+- PHP header stripping (max_input_vars / output buffering)
+- Error page rewrite / `window.open` gadget
+- Bookmarklets, legacy CVE-2020-6519, iframe `csp` restriction, CSP reporting exfiltration
+
+**Third-party gadgets**
+- Google reCAPTCHA script gadget, analytics/tracking SDK gadgets
 
 Payloads are tested only against GET/DOM parameters and are reported solely when a real dialog fires, so CSP bypass findings are verified, not speculative.
 

@@ -11,11 +11,14 @@ import (
 
 // Policy is a parsed Content-Security-Policy (headers and meta tags).
 type Policy struct {
-	EnforcedHeaders   []string
-	ReportOnlyHeaders []string
-	MetaPolicies      []string
-	Directives        map[string][]string
-	Nonces            []string
+	EnforcedHeaders      []string
+	ReportOnlyHeaders    []string
+	MetaPolicies         []string
+	Directives           map[string][]string
+	ReportOnlyDirectives map[string][]string
+	Nonces               []string
+	AngularInPage        bool
+	PHP                  bool
 }
 
 // Issue is one CSP weakness or observation.
@@ -37,25 +40,37 @@ type Analysis struct {
 	Unrestricted    bool
 	InlineAllowed   bool
 	UnsafeEval      bool
+	UnsafeHashes    bool
 	StrictDynamic   bool
 	DataAllowed     bool
+	BlobAllowed     bool
 	Wildcard        bool
 
-	MissingBaseURI    bool
-	MissingObjectSrc  bool
-	MissingFormAction bool
+	MissingBaseURI         bool
+	MissingObjectSrc       bool
+	MissingFormAction      bool
+	MissingFrameAncestors  bool
+	TrustedTypesReportOnly bool
 
-	Nonces       []string
-	AngularURL   string
-	AllowedHosts []string
-	ThirdParty   []string
-	Issues       []Issue
-	Techniques   []Technique
+	Nonces        []string
+	AngularURL    string
+	AngularInPage bool
+	AllowedHosts  []string
+	WildcardHosts []string
+	FrameHosts    []string
+	ThirdParty    []string
+	PHP           bool
+	HasReport     bool
+	Issues        []Issue
+	Techniques    []Technique
 }
 
 // Parse extracts CSP policies from response headers, meta tags and DOM nonces.
 func Parse(headers map[string]string, html string) *Policy {
-	p := &Policy{Directives: map[string][]string{}}
+	p := &Policy{
+		Directives:           map[string][]string{},
+		ReportOnlyDirectives: map[string][]string{},
+	}
 
 	for key, value := range headers {
 		switch strings.ToLower(strings.TrimSpace(key)) {
@@ -82,8 +97,21 @@ func Parse(headers map[string]string, html string) *Policy {
 		}
 	}
 
+	for _, raw := range p.ReportOnlyHeaders {
+		parseDirectives(raw, p.ReportOnlyDirectives)
+	}
 	for _, raw := range append(append([]string{}, p.EnforcedHeaders...), p.MetaPolicies...) {
 		parseDirectives(raw, p.Directives)
+	}
+	lowerHTML := strings.ToLower(html)
+	p.AngularInPage = strings.Contains(lowerHTML, "ng-app") || strings.Contains(lowerHTML, "angular.min.js") ||
+		strings.Contains(lowerHTML, "angular.js")
+	for key, value := range headers {
+		lowerKey, lowerValue := strings.ToLower(key), strings.ToLower(value)
+		if (lowerKey == "x-powered-by" && strings.Contains(lowerValue, "php")) ||
+			(lowerKey == "set-cookie" && strings.Contains(lowerValue, "phpsessid")) {
+			p.PHP = true
+		}
 	}
 	for _, token := range flatten(p.Directives) {
 		lower := strings.ToLower(token)
@@ -157,14 +185,30 @@ func Analyze(p *Policy) *Analysis {
 
 	a.InlineAllowed = a.Unrestricted || hasToken("'unsafe-inline'")
 	a.UnsafeEval = hasToken("'unsafe-eval'")
+	a.UnsafeHashes = hasToken("'unsafe-hashes'")
 	a.StrictDynamic = hasToken("'strict-dynamic'")
 	a.DataAllowed = hasToken("data:")
+	a.BlobAllowed = hasToken("blob:")
 	a.Wildcard = hasToken("*") || hasToken("http:") || hasToken("https:")
 
 	a.Nonces = append([]string(nil), p.Nonces...)
+	a.AngularInPage = p.AngularInPage
+	a.PHP = p.PHP
 	a.AllowedHosts = extractHosts(sources)
+	a.WildcardHosts = wildcardHosts(sources)
+	var frameSources []string
+	for _, name := range []string{"frame-src", "child-src", "default-src"} {
+		if values, ok := p.Directives[name]; ok {
+			frameSources = values
+			break
+		}
+	}
+	a.FrameHosts = extractHosts(frameSources)
 	a.ThirdParty = thirdPartyHosts(a.AllowedHosts)
 	a.AngularURL = findAngularURL(sources)
+	_, hasReportURI := p.Directives["report-uri"]
+	_, hasReportTo := p.Directives["report-to"]
+	a.HasReport = hasReportURI || hasReportTo || len(p.ReportOnlyHeaders) > 0
 
 	if a.Enforced {
 		if _, ok := p.Directives["base-uri"]; !ok {
@@ -178,6 +222,12 @@ func Analyze(p *Policy) *Analysis {
 		if _, ok := p.Directives["form-action"]; !ok {
 			a.MissingFormAction = true
 		}
+		if _, ok := p.Directives["frame-ancestors"]; !ok {
+			a.MissingFrameAncestors = true
+		}
+	}
+	if _, ok := p.ReportOnlyDirectives["require-trusted-types-for"]; ok {
+		a.TrustedTypesReportOnly = true
 	}
 
 	a.buildIssues()
@@ -216,6 +266,12 @@ func (a *Analysis) buildIssues() {
 	if a.DataAllowed {
 		add("high", "script-src", "script-src allows data: scripts")
 	}
+	if a.BlobAllowed {
+		add("medium", "script-src", "script-src allows blob: scripts")
+	}
+	if a.UnsafeHashes {
+		add("medium", "script-src", "'unsafe-hashes' allows hashed inline event handlers")
+	}
 	if a.StrictDynamic {
 		add("info", "script-src", "'strict-dynamic' present: host allowlists are ignored; gadgets/trusted loaders may load scripts")
 	}
@@ -233,6 +289,15 @@ func (a *Analysis) buildIssues() {
 	}
 	if a.MissingFormAction {
 		add("low", "form-action", "form-action is missing (credential-theft/form hijacking techniques may apply)")
+	}
+	if a.MissingFrameAncestors {
+		add("low", "frame-ancestors", "frame-ancestors is missing (clickjacking / frame-based techniques may apply)")
+	}
+	if a.TrustedTypesReportOnly {
+		add("medium", "require-trusted-types-for", "Trusted Types is Report-Only and does not block DOM XSS")
+	}
+	if len(a.WildcardHosts) > 0 {
+		add("medium", "script-src", "Wildcard subdomain allowlist: "+strings.Join(a.WildcardHosts, ", "))
 	}
 }
 
@@ -351,8 +416,17 @@ func selectTechniques(a *Analysis) []Technique {
 	if a.DataAllowed {
 		keys = append(keys, "data_uri")
 	}
+	if a.BlobAllowed {
+		keys = append(keys, "blob_uri")
+	}
+	if a.UnsafeHashes {
+		keys = append(keys, "unsafe_hashes")
+	}
+	if a.AngularInPage {
+		keys = append(keys, "angular_dom")
+	}
 	if a.AngularURL != "" {
-		keys = append(keys, "angular_cdn")
+		keys = append(keys, "angular_cdn", "angular_library_gadgets")
 	}
 	if len(a.AllowedHosts) > 0 {
 		keys = append(keys, "jsonp")
@@ -367,13 +441,40 @@ func selectTechniques(a *Analysis) []Technique {
 		keys = append(keys, "third_party")
 	}
 	if a.Enforced {
-		keys = append(keys, "self_upload", "path_redirect", "policy_injection", "dom_xss", "service_worker")
+		keys = append(keys, "self_upload", "path_redirect", "policy_injection", "dom_xss", "service_worker", "header_injection")
 	}
 	if _, ok := a.Policy.Directives["require-trusted-types-for"]; ok {
 		keys = append(keys, "trusted_types")
 	}
+	if a.TrustedTypesReportOnly {
+		keys = append(keys, "trusted_types_report_only")
+	}
 	if a.MissingFormAction {
 		keys = append(keys, "form_action")
+	}
+	if a.MissingFrameAncestors {
+		keys = append(keys, "frame_ancestors")
+	}
+	if a.MissingBaseURI {
+		keys = append(keys, "dangling_markup")
+	}
+	if len(a.WildcardHosts) > 0 {
+		keys = append(keys, "wildcard_subdomain_takeover")
+	}
+	if a.HasReport {
+		keys = append(keys, "csp_report_exfil")
+	}
+	if a.PHP {
+		keys = append(keys, "php_header_strip")
+	}
+	if hasAllowedHostSuffix(a.AllowedHosts, "google.com") {
+		keys = append(keys, "google_recaptcha_gadget")
+	}
+	if hasAnyAllowedHostSuffix(a.AllowedHosts, "google-analytics.com", "googletagmanager.com", "facebook.com", "hotjar.com") {
+		keys = append(keys, "analytics_gadgets")
+	}
+	if len(a.FrameHosts) > 0 {
+		keys = append(keys, "frame_src_allowlist")
 	}
 
 	var out []Technique
@@ -388,6 +489,44 @@ func selectTechniques(a *Analysis) []Technique {
 		}
 	}
 	return out
+}
+
+func wildcardHosts(sources []string) []string {
+	var out []string
+	for _, src := range sources {
+		lower := strings.ToLower(strings.TrimSpace(src))
+		if i := strings.Index(lower, "://"); i >= 0 {
+			lower = lower[i+3:]
+		}
+		if !strings.HasPrefix(lower, "*.") {
+			continue
+		}
+		host := strings.TrimPrefix(lower, "*.")
+		host = strings.SplitN(host, "/", 2)[0]
+		host = strings.SplitN(host, ":", 2)[0]
+		if host != "" {
+			out = appendUnique(out, host)
+		}
+	}
+	return out
+}
+
+func hasAllowedHostSuffix(hosts []string, suffix string) bool {
+	for _, host := range hosts {
+		if host == suffix || strings.HasSuffix(host, "."+suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyAllowedHostSuffix(hosts []string, suffixes ...string) bool {
+	for _, suffix := range suffixes {
+		if hasAllowedHostSuffix(hosts, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // BypassPayload is one dialog-verifiable CSP bypass payload.
@@ -422,6 +561,13 @@ func BypassPayloads(a *Analysis, includeInline bool) []BypassPayload {
 		out = append(out, BypassPayload{
 			Key: "data_uri", Name: "data: script source", Technique: "data_uri",
 			Payload:    `<script src="data:text/javascript,alert(1)"></script>`,
+			DialogType: "alert", ExpectedValue: 1,
+		})
+	}
+	if a.AngularInPage {
+		out = append(out, BypassPayload{
+			Key: "angular_dom", Name: "AngularJS in-page gadget", Technique: "angular_dom",
+			Payload:    `<div ng-app ng-csp>{{constructor.constructor('alert(1)')()}}</div>`,
 			DialogType: "alert", ExpectedValue: 1,
 		})
 	}
