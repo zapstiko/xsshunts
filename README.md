@@ -21,6 +21,7 @@ XSSHuntS is an automated multi-vector XSS scanner and auditor written in Go. It 
 - **WAF / rate-limit awareness** — fingerprints Cloudflare, AWS WAF/CloudFront, Akamai, Imperva, ModSecurity, Wordfence, Sucuri, F5, and 429 throttling; automatically doubles delays and backs off
 - **Authenticated scans** — cookie strings/files (Netscape, JSON, `k=v`), custom headers, per-target cookie handling
 - **Reports** — console summary and JSON export with raw HTTP request blocks, confidence scores and PoCs
+- **Self-update** — `--update` downloads the latest release, verifies its SHA-256 checksum and replaces the running binary; `--check-update` reports new versions and an automatic startup check keeps you notified
 - **CLI** — full flag set (`-u`, `--scan`, `-m`, `-p`, `-d`, `-c`, `-H`, `--crawl`, `--show-*`, …)
 - **Two engines in one repo** — the main Playwright engine plus an experimental Chromium-only `chromedp` engine (`cmd/xsshunts-chromedp`)
 
@@ -70,6 +71,13 @@ git clone https://github.com/zapstiko/xsshunts.git
 cd xsshunts
 go build -o xsshunts .
 ./xsshunts --install-browsers
+```
+
+Keep the binary current at any time with:
+
+```bash
+xsshunts --check-update   # report available versions
+xsshunts --update         # download, verify and replace in place
 ```
 
 ### Alternate Chromium engine (experimental)
@@ -172,7 +180,20 @@ xsshunts -u "https://target.com" --crawl --depth 2 -t 3
 xsshunts -u "https://target.com" --crawl --depth 3 --max-urls 100 -t 5 -m
 ```
 
-### 13. Inspect the built-in knowledge bases
+### 13. Update to the latest version
+
+```bash
+# Check whether a newer release exists
+xsshunts --check-update
+
+# Download, verify and install the latest release in place
+xsshunts --update
+
+# Disable the automatic startup update notice
+xsshunts --no-update-check -u "https://target.com"
+```
+
+### 14. Inspect the built-in knowledge bases
 
 ```bash
 xsshunts --show-payloads
@@ -223,6 +244,11 @@ Information Options:
   --show-params                   Show all built-in known parameters and exit
   --show-headers                  Show all built-in target HTTP headers and exit
 
+Update Options:
+  --update                        Download and install the latest GitHub release, then exit
+  --check-update                  Check whether a newer release is available, then exit
+  --no-update-check               Disable the automatic update check at startup
+
 Output & Reporting Options:
   -o, --output FILE               Save JSON report (relative names go to output/)
   -s, --silent                    Silent mode (findings only)
@@ -253,6 +279,7 @@ Output & Reporting Options:
 ├── reporter/               Console summaries + JSON export
 ├── scanner/                Audit orchestrator
 ├── utils/                  URL, HTML, PoC and match helpers
+├── updater/                Self-update: GitHub releases, SHA-256 verification
 ├── wordlists/              Embedded parameter wordlist
 ├── internal/ + cmd/xsshunts-chromedp/
 │                           Alternate Chromium-only engine (experimental)

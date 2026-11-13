@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/zapstiko/xsshunts/appmeta"
 	"github.com/zapstiko/xsshunts/browser"
@@ -22,6 +24,7 @@ import (
 	"github.com/zapstiko/xsshunts/payloads"
 	"github.com/zapstiko/xsshunts/reporter"
 	"github.com/zapstiko/xsshunts/scanner"
+	"github.com/zapstiko/xsshunts/updater"
 	"github.com/zapstiko/xsshunts/utils"
 	"github.com/zapstiko/xsshunts/wordlists"
 )
@@ -68,6 +71,9 @@ type cliOptions struct {
 	Verbose         bool
 	Help            bool
 	Version         bool
+	Update          bool
+	CheckUpdate     bool
+	NoUpdateCheck   bool
 	InstallBrowsers bool
 }
 
@@ -157,6 +163,9 @@ func buildFlagSet() (*flag.FlagSet, *cliOptions) {
 	fs.BoolVar(&o.Help, "help", false, "show help")
 
 	fs.BoolVar(&o.Version, "version", false, "show version")
+	fs.BoolVar(&o.Update, "update", false, "update to the latest release")
+	fs.BoolVar(&o.CheckUpdate, "check-update", false, "check for the latest release")
+	fs.BoolVar(&o.NoUpdateCheck, "no-update-check", false, "disable startup update check")
 
 	fs.BoolVar(&o.InstallBrowsers, "install-browsers", false, "install Playwright browsers and exit")
 
@@ -209,6 +218,11 @@ Information Options:
   --show-params                 Show all built-in known parameters and exit
   --show-headers                Show all built-in target HTTP headers and exit
 
+Update Options:
+  --update                      Download and install the latest GitHub release, then exit
+  --check-update                Check whether a newer release is available, then exit
+  --no-update-check             Disable the automatic update check at startup
+
 Output & Reporting Options:
   -o, --output FILE             Save report JSON (saved to output/ unless absolute path given)
   -s, --silent                  Silent mode (suppress banners and progress, output only findings)
@@ -244,6 +258,10 @@ func run() int {
 	if opts.Version {
 		fmt.Printf("XSSHuntS/xsshunts %s\n", appmeta.Version)
 		return 0
+	}
+
+	if opts.Update || opts.CheckUpdate {
+		return runUpdate(opts.CheckUpdate)
 	}
 
 	if opts.Channel != "" {
@@ -300,6 +318,8 @@ func run() int {
 		}
 		return 1
 	}
+
+	maybeNotifyUpdate(opts)
 
 	customHeaders := parseCustomHeaders(opts.Headers)
 	var customPostfields map[string]string
@@ -953,4 +973,100 @@ func loadCookiesConfig(rawCookie, cookieFile, baseDir, targetURL string) ([]mode
 	}
 	header := strings.Join(parts, "; ")
 	return final, header
+}
+
+// runUpdate checks GitHub for the latest release and optionally installs it.
+func runUpdate(checkOnly bool) int {
+	fmt.Println("[*] checking GitHub for the latest release...")
+	release, err := updater.FetchLatest()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "xsshunts: error: update check failed: %v\n", err)
+		return 1
+	}
+
+	current := appmeta.Version
+	fmt.Printf("[*] current version : v%s\n", current)
+	fmt.Printf("[*] latest release  : %s\n", release.TagName)
+
+	if !updater.IsNewer(current, release.TagName) {
+		fmt.Printf("[+] xsshunts is up to date\n")
+		return 0
+	}
+
+	if checkOnly {
+		fmt.Printf("[!] update available: v%s -> %s\n", current, release.TagName)
+		fmt.Printf("    %s\n", release.HTMLURL)
+		fmt.Println("    run 'xsshunts --update' to install it")
+		return 0
+	}
+
+	asset := updater.FindAsset(release, runtime.GOOS, runtime.GOARCH)
+	if asset == nil {
+		fmt.Fprintf(os.Stderr, "xsshunts: error: no release asset for %s/%s; download manually: %s\n",
+			runtime.GOOS, runtime.GOARCH, release.HTMLURL)
+		return 1
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "xsshunts: error: could not locate current executable: %v\n", err)
+		return 1
+	}
+
+	fmt.Printf("[*] downloading %s (%.1f MB)...\n", asset.Name, float64(asset.Size)/1048576)
+	newPath, err := updater.DownloadWithChecksum(release, asset, filepath.Dir(exe))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "xsshunts: error: update failed: %v\n", err)
+		return 1
+	}
+
+	result, err := updater.ReplaceExecutable(newPath)
+	if err != nil {
+		_ = os.Remove(newPath)
+		fmt.Fprintf(os.Stderr, "xsshunts: error: update failed: %v\n", err)
+		return 1
+	}
+
+	if result.Manual {
+		fmt.Printf("[+] new version downloaded: %s\n", result.Path)
+		fmt.Println("[!] close xsshunts, then replace the existing executable with the downloaded file")
+		return 0
+	}
+
+	fmt.Printf("[+] xsshunts updated: v%s -> %s (%s)\n", current, release.TagName, result.Path)
+	return 0
+}
+
+// maybeNotifyUpdate performs a short, best-effort startup update check.
+func maybeNotifyUpdate(opts *cliOptions) {
+	if opts.Silent || opts.NoUpdateCheck || opts.Update || opts.CheckUpdate {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("XSSHUNTS_NO_UPDATE_CHECK"))) {
+	case "1", "true", "yes":
+		return
+	}
+
+	type result struct {
+		tag string
+	}
+	done := make(chan result, 1)
+	go func() {
+		release, err := updater.FetchLatest()
+		if err != nil {
+			done <- result{}
+			return
+		}
+		done <- result{tag: release.TagName}
+	}()
+
+	select {
+	case res := <-done:
+		if res.tag != "" && updater.IsNewer(appmeta.Version, res.tag) {
+			fmt.Printf("\n\033[1m\033[33m[!]\033[0m New version %s available (current v%s). Run 'xsshunts --update' to install.\n\n",
+				res.tag, appmeta.Version)
+		}
+	case <-time.After(1200 * time.Millisecond):
+		// GitHub was slow or offline; never delay a scan for an update notice.
+	}
 }
