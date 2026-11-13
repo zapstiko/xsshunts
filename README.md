@@ -23,6 +23,7 @@ XSSHuntS is an automated multi-vector XSS scanner and auditor written in Go. It 
 - **Reports** — console summary and JSON export with raw HTTP request blocks, confidence scores and PoCs
 - **Self-update** — `--update` checks GitHub, downloads the latest release, verifies its SHA-256 checksum and replaces the running binary
 - **CLI** — full flag set (`-u`, `--scan`, `-m`, `-p`, `-d`, `-c`, `-H`, `--crawl`, `--show-*`, …)
+- **CSP analysis & bypass** — detects enforced/report-only CSP (headers + meta), flags weaknesses, lists applicable bypass techniques, and actively tests dialog-confirmed bypasses such as nonce reuse, `data:` scripts, AngularJS CDN gadgets and inline execution (`--scan csp`, `--show-csp`)
 - **Burp Suite request import** — scan raw HTTP requests exported from Burp Suite (`-r request.txt`), reusing their headers, cookies, query parameters and urlencoded form fields
 - **Resilient setup** — if Playwright's download CDN is blocked, xsshunts bootstraps its driver from the npm registry and automatically uses an installed Chrome/Edge/Chromium, with fast launch timeouts instead of long hangs
 - **Two engines in one repo** — the main Playwright engine plus an experimental Chromium-only `chromedp` engine (`cmd/xsshunts-chromedp`)
@@ -48,6 +49,7 @@ XSSHuntS is an automated multi-vector XSS scanner and auditor written in Go. It 
 | **4** | `modules/links.go` | **Path-Based XSS**: injects payloads into URL path segments and directory rewrites. |
 | **5** | `modules/fragment.go` | **Fragment-Based XSS**: tests URL hash fragments (`#payload`) against SPA routers and DOM sinks. |
 | **6** | `modules/headers.go` | **Header-Based XSS**: injects payloads into HTTP request headers (`User-Agent`, `Referer`, `Origin`, `Cookie`, `X-Forwarded-*`, …). |
+| **CSP** | `modules/csp.go` | **CSP Analysis & Bypass** (optional, `--scan csp` or `all`): parses policies, reports weaknesses/techniques, and tests nonce reuse, `data:` scripts, AngularJS CDN gadgets and inline payloads with dialog confirmation. |
 
 ---
 
@@ -206,12 +208,28 @@ xsshunts -r request.txt --request-scheme http
 
 GET and POST requests are supported. Query parameters, `application/x-www-form-urlencoded` bodies, cookies and headers are reused during testing. JSON/multipart bodies are not fuzzed (URL, cookie and header vectors are still tested).
 
-### 15. Inspect the built-in knowledge bases
+### 15. CSP analysis & bypass
+
+```bash
+# Analyze the policy and test applicable dialog-confirmed bypasses
+xsshunts -u "https://target.com/app?q=test" --scan csp
+
+# Include CSP testing in a full audit
+xsshunts -u "https://target.com/app?q=test" --scan all
+
+# Print the complete CSP bypass technique knowledge base
+xsshunts --show-csp
+```
+
+CSP analysis understands enforced and Report-Only policies from headers and `<meta http-equiv>` tags, then evaluates `script-src`/`default-src`, nonces, `'strict-dynamic'`, wildcards, `data:`, `base-uri`, `object-src`, `form-action`, Trusted Types and third-party allowlists. Active bypass payloads are only recorded when a browser dialog confirms execution.
+
+### 16. Inspect the built-in knowledge bases
 
 ```bash
 xsshunts --show-payloads
 xsshunts --show-params
 xsshunts --show-headers
+xsshunts --show-csp
 ```
 
 ---
@@ -236,7 +254,7 @@ Browser & Engine Options:
   -t, --threads, --concurrency N  Concurrent browser workers (1-5, default: 1)
 
 Scan Scope Options:
-  --scan MODULES                  get, post, path, fragment, header, or all (default: get,post)
+  --scan MODULES                  get, post, path, fragment, header, csp, or all (default: get,post)
   -w, --wordlist FILE             Custom parameter wordlist file to probe
   -m, --mining                    Parameter mining and reflection analysis only
   -p, --param PARAMS              Parameters to test (e.g. 'p:js,q:html' or 'name')
@@ -258,6 +276,7 @@ Information Options:
   --show-payloads                 Show all built-in XSS payloads and exit
   --show-params                   Show all built-in known parameters and exit
   --show-headers                  Show all built-in target HTTP headers and exit
+  --show-csp                      Show the built-in CSP bypass technique knowledge base and exit
 
 Update Options:
   --update                        Update xsshunts to the latest GitHub release and exit
@@ -282,6 +301,7 @@ Output & Reporting Options:
 ├── appmeta/                Banner and application metadata
 ├── browser/                Playwright manager + dialog/navigation session
 ├── config/                 Built-in parameter/header knowledge bases
+├── csp/                    CSP parser, policy analysis, bypass knowledge base
 ├── crawler/                BFS spider and dedup signatures
 ├── detection/              Reflection, context, matrix, confidence, WAF engines
 ├── logger/                 Console rendering
@@ -299,6 +319,36 @@ Output & Reporting Options:
 │                           Alternate Chromium-only engine (experimental)
 └── output/                 Default report directory
 ```
+
+---
+
+## CSP Bypass Techniques
+
+`--show-csp` prints the full built-in knowledge base. The analysis engine selects applicable techniques based on the observed policy:
+
+- No CSP / Report-Only CSP
+- `'unsafe-inline'` (inline scripts and event handlers)
+- `'unsafe-eval'` (eval/Function gadgets)
+- **Nonce reuse** — reuse a nonce visible in the DOM for an injected script (works with `'strict-dynamic'`)
+- `'strict-dynamic'` trusted-loader/script gadgets
+- Wildcard, `https:`, `http:` and wildcard-host allowlists
+- `data:` script sources
+- **AngularJS gadget from an allowlisted CDN** (cdnjs, googleapis, jsDelivr, unpkg, code.angularjs.org)
+- JSONP endpoints on allowlisted hosts (JSONBee)
+- Missing `base-uri` (base-tag hijacking)
+- Missing `object-src` (legacy plugins)
+- Abusable third-party allowlists (CloudFront, S3, Azure, Heroku, Firebase, jsDelivr, …)
+- Same-origin uploads with `script-src 'self'`
+- Path restriction bypass via redirects / Relative Path Overwrite
+- CSP policy injection (`script-src-elem` / `script-src-attr`, legacy `;_`)
+- DOM XSS sinks not covered by CSP
+- Service worker `importScripts()`
+- Weak Trusted Types deployments
+- Missing `form-action` (credential-theft / Referer leakage)
+
+Payloads are tested only against GET/DOM parameters and are reported solely when a real dialog fires, so CSP bypass findings are verified, not speculative.
+
+References: [HackTricks CSP Bypass](https://book.hacktricks.wiki/en/pentesting-web/content-security-policy-csp-bypass/index.html), [PayloadsAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings), [JSONBee](https://github.com/zigoo0/JSONBee), [PortSwigger CSP policy injection](https://portswigger.net/research/bypassing-csp-with-policy-injection), [AngularJS CDN CSP bypass](https://blog.huli.tw/2022/09/01/en/angularjs-csp-bypass-cdnjs/), [Google CSP Evaluator](https://csp-evaluator.withgoogle.com/).
 
 ---
 

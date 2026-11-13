@@ -100,7 +100,7 @@ func (e *Engine) Run() ([]*models.XSSFinding, []*models.Parameter) {
 		log.Info("mining mode active: parameter discovery and reflection analysis only")
 	}
 	var mods []string
-	for _, m := range []string{"get", "post", "path", "fragment", "header"} {
+	for _, m := range []string{"get", "post", "path", "fragment", "header", "csp"} {
 		if cfg.HasModule(m) {
 			mods = append(mods, m)
 		}
@@ -225,6 +225,13 @@ func (e *Engine) Run() ([]*models.XSSFinding, []*models.Parameter) {
 				return
 			}
 			log.Warning("no parameters discovered; checking path, fragment, and header vectors...")
+		}
+
+		if cfg.HasModule("csp") {
+			log.Debug("beginning CSP bypass analysis...")
+			findings := modules.RunCSPAnalysis(sess, parameters, cfg, log, e.WAF)
+			allFindings = append(allFindings, findings...)
+			log.Debug(fmt.Sprintf("CSP analysis complete: %d finding(s)", len(findings)))
 		}
 
 		if cfg.HasModule("path") {

@@ -16,6 +16,7 @@ import (
 	"github.com/zapstiko/xsshunts/browser"
 	"github.com/zapstiko/xsshunts/config"
 	"github.com/zapstiko/xsshunts/crawler"
+	"github.com/zapstiko/xsshunts/csp"
 	"github.com/zapstiko/xsshunts/detection"
 	"github.com/zapstiko/xsshunts/logger"
 	"github.com/zapstiko/xsshunts/models"
@@ -68,6 +69,7 @@ type cliOptions struct {
 	ShowPayloads    bool
 	ShowParams      bool
 	ShowHeaders     bool
+	ShowCSP         bool
 	Output          string
 	Silent          bool
 	Verbose         bool
@@ -150,6 +152,7 @@ func buildFlagSet() (*flag.FlagSet, *cliOptions) {
 	fs.BoolVar(&o.ShowParams, "show-params", false, "show built-in params")
 	fs.BoolVar(&o.ShowParams, "show-parameters", false, "show built-in params")
 	fs.BoolVar(&o.ShowHeaders, "show-headers", false, "show built-in headers")
+	fs.BoolVar(&o.ShowCSP, "show-csp", false, "show CSP bypass techniques")
 
 	fs.StringVar(&o.Output, "o", "", "JSON report path")
 	fs.StringVar(&o.Output, "output", "", "JSON report path")
@@ -198,7 +201,7 @@ Browser & Engine Options:
   -t, --threads, --concurrency  Number of concurrent browser tabs/workers (1-5, default: 1)
 
 Scan Scope Options:
-  --scan MODULES                Modules: get, post, path, fragment, header, all (default: get,post)
+  --scan MODULES                Modules: get, post, path, fragment, header, csp, all (default: get,post)
   -w, --wordlist FILE           Custom parameter wordlist file to probe
   -m, --mining                  Perform parameter mining and reflection analysis only
   -p, --param PARAMS            Parameters to test (e.g. 'p:js,q:html' or 'name')
@@ -220,6 +223,7 @@ Information Options:
   --show-payloads               Show all built-in XSS payloads and exit
   --show-params                 Show all built-in known parameters and exit
   --show-headers                Show all built-in target HTTP headers and exit
+  --show-csp                    Show the built-in CSP bypass technique knowledge base and exit
 
 Update Options:
   --update                      Update xsshunts to the latest GitHub release and exit
@@ -768,6 +772,18 @@ func handleShowOptions(opts *cliOptions) bool {
 			fmt.Println(h.Name)
 		}
 	}
+	if opts.ShowCSP {
+		handled = true
+		for _, technique := range csp.AllTechniques() {
+			fmt.Printf("\n[%s] %s\n%s\n", technique.Key, technique.Name, technique.Description)
+			for _, payload := range technique.Payloads {
+				fmt.Printf("  payload: %s\n", payload)
+			}
+			if len(technique.References) > 0 {
+				fmt.Printf("  refs: %s\n", strings.Join(technique.References, ", "))
+			}
+		}
+	}
 	if opts.ShowParams {
 		handled = true
 		seen := map[string]bool{}
@@ -883,10 +899,10 @@ func parseScanModules(scanStr string) map[string]bool {
 	}
 	for _, t := range tokens {
 		if t == "all" {
-			return map[string]bool{"get": true, "post": true, "path": true, "fragment": true, "header": true}
+			return map[string]bool{"get": true, "post": true, "path": true, "fragment": true, "header": true, "csp": true}
 		}
 	}
-	valid := map[string]bool{"get": true, "post": true, "path": true, "fragment": true, "header": true}
+	valid := map[string]bool{"get": true, "post": true, "path": true, "fragment": true, "header": true, "csp": true}
 	selected := map[string]bool{}
 	for _, tok := range tokens {
 		switch {
@@ -900,6 +916,8 @@ func parseScanModules(scanStr string) map[string]bool {
 			selected["fragment"] = true
 		case tok == "headers" || tok == "head":
 			selected["header"] = true
+		case tok == "csp" || tok == "csp-bypass" || tok == "content-security-policy":
+			selected["csp"] = true
 		}
 	}
 	if len(selected) == 0 {
