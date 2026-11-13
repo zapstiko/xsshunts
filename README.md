@@ -264,7 +264,7 @@ Update Options:
 
 Output & Reporting Options:
   -o, --output FILE               Save JSON report (relative names go to output/)
-  -s, --silent                    Silent mode (findings only)
+  -s, --silent                    Silent mode (banner + findings only; full details for verified XSS)
   -v, --verbose                   Verbose debugging output
   -h, --help                      Show help and exit
   --version                       Show version and exit

@@ -4,7 +4,7 @@ package appmeta
 import "strings"
 
 const (
-	Version     = "1.2.0"
+	Version     = "1.2.1"
 	App         = "XSSHuntS"
 	Description = "An Automatic XSS Scanner"
 	Author      = "zapstiko"

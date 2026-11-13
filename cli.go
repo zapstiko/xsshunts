@@ -226,7 +226,7 @@ Update Options:
 
 Output & Reporting Options:
   -o, --output FILE             Save report JSON (saved to output/ unless absolute path given)
-  -s, --silent                  Silent mode (suppress banners and progress, output only findings)
+  -s, --silent                  Silent mode (banner + findings only; no progress output)
   -v, --verbose                 Enable verbose debugging output
   -h, --help                    Show this help message and exit
   --version                     Show program's version number and exit

@@ -56,11 +56,9 @@ func NewLogger(verbose, silent bool) *Logger {
 	return &Logger{Verbose: verbose, Silent: silent}
 }
 
-// PrintBanner renders the tool banner.
+// PrintBanner renders the tool banner. It is shown in silent mode too, while
+// progress output remains suppressed.
 func (l *Logger) PrintBanner() {
-	if l.Silent {
-		return
-	}
 	indentBanner := strings.Repeat(" ", 18)
 	indentSub := strings.Repeat(" ", 22)
 
@@ -191,20 +189,29 @@ type TestBlockOpts struct {
 // TestBlock renders one payload test result.
 func (l *Logger) TestBlock(o TestBlockOpts) {
 	if l.Silent {
-		if !o.IsXSS && !o.IsMatch {
+		if o.IsXSS {
+			tag := fmt.Sprintf("%s%s[CRITICAL]%s", Bold, Red, Reset)
+			fmt.Printf("%s %s\n", tag, o.RequestDesc)
+			fmt.Printf("  Payload    : %s (%s%s%s)\n", o.PayloadName, Yellow, o.PayloadStr, Reset)
+			if o.Postfields != "" {
+				fmt.Printf("  Postfields : %s\n", o.Postfields)
+			}
+			if o.HeaderInfo != "" {
+				fmt.Printf("  Header     : %s\n", o.HeaderInfo)
+			}
+			fmt.Printf("  Confidence : %s\n\n", FormatConfidence(o.Confidence))
 			return
 		}
-		tag := fmt.Sprintf("%s%s[POTENTIAL]%s", Bold, SoftOrange, Reset)
-		if o.IsXSS {
-			tag = fmt.Sprintf("%s%s[CRITICAL]%s", Bold, Red, Reset)
+		if o.IsMatch {
+			tag := fmt.Sprintf("%s%s[POTENTIAL]%s", Bold, SoftOrange, Reset)
+			extra := ""
+			if o.Postfields != "" {
+				extra = fmt.Sprintf(" | Postfields: %s", o.Postfields)
+			} else if o.HeaderInfo != "" {
+				extra = fmt.Sprintf(" | Header: %s", o.HeaderInfo)
+			}
+			fmt.Printf("%s %s%s\n", tag, o.RequestDesc, extra)
 		}
-		extra := ""
-		if o.Postfields != "" {
-			extra = fmt.Sprintf(" | Postfields: %s", o.Postfields)
-		} else if o.HeaderInfo != "" {
-			extra = fmt.Sprintf(" | Header: %s", o.HeaderInfo)
-		}
-		fmt.Printf("%s %s%s\n", tag, o.RequestDesc, extra)
 		return
 	}
 
